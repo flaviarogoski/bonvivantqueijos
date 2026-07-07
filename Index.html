@@ -607,7 +607,7 @@ table.imp-grid tr.is-header td.rownum { background: var(--ink); color: var(--beg
         <div class="field">
           <label>Frete adicional (%)</label>
           <input type="number" id="pFrete" value="0" step="0.1" min="0" />
-          <span class="hint">0% se frete CIF (incluso no preço da NF)</span>
+          <span class="hint">Sugerido pela NF (frete ÷ produtos) — ajuste se precisar</span>
         </div>
         <div class="field">
           <label>Outros custos variáveis (%)</label>
@@ -1487,10 +1487,14 @@ function parseNF(xmlStr, arquivo) {
     destNome: g(dest,'xNome'), destUF: ufDest,
     nNF: g(ide,'nNF'), data: dataFmt, chNFe, arquivo: arquivo || '',
     vNF: parseFloat(g(tot,'vNF')) || 0,
+    vProdTotal: parseFloat(g(tot,'vProd')) || 0,
+    vFrete: parseFloat(g(tot,'vFrete')) || 0,
     modFrete: g(transp,'modFrete'),
     interestadual: ufEmit !== ufDest,
     icmsInterMedio, itens,
   };
+  // Frete: % que o valor do frete representa sobre os produtos (sugestão p/ a precificação)
+  nfData.fretePct = nfData.vProdTotal > 0 ? Math.round(nfData.vFrete / nfData.vProdTotal * 10000) / 100 : 0;
 
   // Defaults por item (margem global + regra automática de DIFAL/antecipação)
   const mcPad  = parseFloat((document.getElementById('pMC') || {}).value) || 60;
@@ -1521,7 +1525,8 @@ function renderNF() {
 
 function renderHeader() {
   const d = nfData;
-  const freteCIF = d.modFrete === '0';
+  const temFrete = d.vFrete > 0;
+  const freteComprador = (d.modFrete === '1' || d.modFrete === '2' || d.modFrete === '4'); // destinatário / terceiros pagam
   document.getElementById('nfHeader').innerHTML = `
     <span class="section-label">Nota fiscal carregada</span>
     <div class="nf-meta">
@@ -1531,20 +1536,24 @@ function renderHeader() {
       <div class="nf-meta-item"><label>NF</label><span>${d.nNF}</span></div>
       <div class="nf-meta-item"><label>Emissão</label><span>${d.data}</span></div>
       <div class="nf-meta-item"><label>Total NF</label><span>R$ ${fmt(d.vNF)}</span></div>
+      <div class="nf-meta-item"><label>Frete na NF</label><span>R$ ${fmt(d.vFrete)}${temFrete ? ' · ' + d.fretePct.toFixed(1) + '%' : ''}</span></div>
     </div>
     <div class="tags">
       ${d.interestadual
         ? `<span class="tag tag-info">${d.emitUF} → ${d.destUF} · DIFAL pode incidir</span>`
         : `<span class="tag tag-ok">Dentro do PR · sem DIFAL</span>`}
-      ${freteCIF
-        ? `<span class="tag tag-ok">Frete CIF — incluso</span>`
-        : `<span class="tag tag-warn">Frete FOB — verificar custo</span>`}
+      ${!temFrete
+        ? `<span class="tag tag-ok">Sem frete destacado na NF</span>`
+        : (freteComprador
+            ? `<span class="tag tag-warn">Frete R$ ${fmt(d.vFrete)} ≈ ${d.fretePct.toFixed(1)}% · sugerido aplicar</span>`
+            : `<span class="tag tag-ok">Frete R$ ${fmt(d.vFrete)} — incluso (CIF)</span>`)}
       ${d.itens.some(i=>i.pisIsen) ? `<span class="tag tag-ok">PIS/COFINS isento · LC 214/2025</span>` : ''}
       <span class="tag tag-accent">ICMS compra: ${d.icmsInterMedio.toFixed(0)}%</span>
     </div>
   `;
   document.getElementById('pIcmsInter').value = d.icmsInterMedio.toFixed(1);
-  if (d.modFrete === '0') document.getElementById('pFrete').value = 0;
+  // Sugere o % de frete: aplica o valor da NF (rateado nos produtos) quando o comprador paga; senão 0 (incluso/sem frete)
+  document.getElementById('pFrete').value = (temFrete && freteComprador) ? d.fretePct : 0;
 }
 
 function renderAlertas() {
