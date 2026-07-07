@@ -826,7 +826,37 @@ table.imp-grid tr.is-header td.rownum { background: var(--ink); color: var(--beg
   <!-- ════════ ABA RENDIMENTO (APROVEITAMENTO) ════════ -->
   <div id="tab-rendimento" class="tab-pane">
 
-    <!-- REGISTRAR PEÇA ENCERRADA -->
+    <!-- PEÇAS ABERTAS (EM USO) -->
+    <div class="section" style="margin-bottom:1.5rem">
+      <h3>Peças abertas (em uso)</h3>
+      <p class="imp-hint" style="margin:0 0 1rem">Abra a peça quando começar a usar e vá <b>lançando as vendas</b> ao longo dos dias. Quando acabar, clique em <b>Encerrar</b> — o aproveitamento é calculado e entra no histórico.</p>
+      <div class="toolbar">
+        <div class="field-inline" style="min-width:240px;flex:1">
+          <label>Produto</label>
+          <input type="text" id="paProduto" list="rProdList" placeholder="digite ou escolha…" autocomplete="off">
+        </div>
+        <div class="field-inline"><label>Peso recebido (kg)</label><input type="number" id="paRecebido" min="0" step="0.001" placeholder="ex: 40" style="width:130px"></div>
+        <div class="field-inline"><label>Aberta em</label><input type="text" id="paData" placeholder="dd/mm/aaaa" style="width:120px"></div>
+        <div class="spacer"></div>
+        <button class="btn btn-ink" onclick="abrirPeca()">Abrir peça</button>
+      </div>
+      <div class="items-wrap" style="margin-top:0.75rem">
+        <table class="data-table">
+          <thead><tr>
+            <th>Produto</th>
+            <th style="text-align:right">Recebido</th>
+            <th style="text-align:right">Vendido</th>
+            <th style="text-align:right">Restante</th>
+            <th style="text-align:center">Lançar venda (kg · data)</th>
+            <th style="text-align:center">Ações</th>
+          </tr></thead>
+          <tbody id="paTbody"></tbody>
+        </table>
+      </div>
+      <div id="paEmpty" class="empty-state">Nenhuma peça aberta. Abra uma acima quando começar a usar um produto.</div>
+    </div>
+
+    <!-- REGISTRAR PEÇA ENCERRADA (de uma vez) -->
     <div class="section" style="margin-bottom:1.5rem">
       <h3>Registrar peça encerrada</h3>
       <p class="imp-hint" style="margin:0 0 1rem">Quando uma peça acaba, registre o que você <b>recebeu</b> e o que <b>vendeu</b>. O sistema calcula o aproveitamento e vai montando o histórico de cada produto — quanto mais peças, mais preciso.</p>
@@ -1044,7 +1074,7 @@ function switchTab(tab) {
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
   if (tab === 'historico') renderHistorico();
   if (tab === 'orcamento') { popularFornOrc(); renderOrcSalvos(); }
-  if (tab === 'rendimento') { popularProdList(); renderRendimento(); }
+  if (tab === 'rendimento') { popularProdList(); renderPecasAbertas(); renderRendimento(); }
 }
 
 /* ── Sparkline (SVG inline) ── */
@@ -2084,9 +2114,84 @@ let RENDIMENTOS = [];
 async function carregarRendimentos() {
   try { const a = await BV.get(nsKey('bonvivant-rendimento-v1')); RENDIMENTOS = Array.isArray(a) ? a : []; }
   catch (e) { console.error('carregarRendimentos', e); RENDIMENTOS = []; }
-  popularProdList(); renderRendimento();
+  popularProdList(); renderPecasAbertas(); renderRendimento();
 }
 async function salvarRendimentos() { try { await BV.set(nsKey('bonvivant-rendimento-v1'), RENDIMENTOS); } catch (e) { alert('Erro ao salvar rendimento: ' + e.message); } }
+
+/* ── Peças abertas (em uso): abre, lança vendas ao longo dos dias, encerra ── */
+async function abrirPeca() {
+  const prod = (document.getElementById('paProduto').value || '').trim();
+  const rec = parseFloat(document.getElementById('paRecebido').value) || 0;
+  if (!prod) { alert('Informe o produto.'); return; }
+  if (rec <= 0) { alert('Informe o peso recebido (kg).'); return; }
+  let forn = '';
+  const p = Object.values(BANCO.produtos || {}).find(x => normNome(x.nome) === normNome(prod));
+  if (p) forn = p.fornecedorNome || '';
+  RENDIMENTOS.push({
+    id: Date.now() + '-' + Math.random().toString(16).slice(2, 6),
+    produto: prod, fornecedor: forn,
+    dataReceb: brParaISO(document.getElementById('paData').value) || new Date().toISOString().slice(0, 10),
+    dataFim: '', pesoRecebido: Math.round(rec * 1000) / 1000, pesoVendido: 0, aproveitamento: 0, status: 'aberta'
+  });
+  await salvarRendimentos(); renderPecasAbertas();
+  ['paProduto', 'paRecebido', 'paData'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('paProduto').focus();
+}
+
+function renderPecasAbertas() {
+  const tbody = document.getElementById('paTbody'); if (!tbody) return;
+  const empty = document.getElementById('paEmpty');
+  const abertas = RENDIMENTOS.filter(r => r.status === 'aberta');
+  if (!abertas.length) { tbody.innerHTML = ''; if (empty) empty.style.display = 'block'; return; }
+  if (empty) empty.style.display = 'none';
+  const hoje = isoParaBR(new Date().toISOString());
+  tbody.innerHTML = abertas.map(r => {
+    const rest = (r.pesoRecebido || 0) - (r.pesoVendido || 0);
+    const movs = r.movimentos || [];
+    const ultima = movs.length ? movs[movs.length - 1] : null;
+    return `<tr>
+      <td>${esc(r.produto)}<br><span style="font-size:10px;color:var(--ink-light)">aberta ${isoParaBR(r.dataReceb)}</span></td>
+      <td class="num">${fmt(r.pesoRecebido)}</td>
+      <td class="num">${fmt(r.pesoVendido)}${ultima ? `<br><span style="font-size:9px;color:var(--ink-light)">${movs.length} lanç. · últ. ${isoParaBR(ultima.data)}</span>` : ''}</td>
+      <td class="num" style="color:${rest < 0 ? '#b3261e' : 'inherit'}">${fmt(rest)}</td>
+      <td style="text-align:center;white-space:nowrap">
+        <input type="number" min="0" step="0.001" id="venda-${r.id}" placeholder="kg" onkeydown="if(event.key==='Enter')adicionarVenda('${r.id}')" style="width:66px;text-align:right;font-family:var(--font-sans);padding:0.35rem;border:1px solid var(--border);border-radius:var(--radius)">
+        <input type="text" id="vdata-${r.id}" value="${hoje}" title="data da venda" style="width:88px;font-family:var(--font-sans);padding:0.35rem;border:1px solid var(--border);border-radius:var(--radius)">
+        <button class="btn" style="padding:0.35rem 0.6rem" onclick="adicionarVenda('${r.id}')">+ Lançar</button>
+      </td>
+      <td style="text-align:center;white-space:nowrap"><button class="btn btn-ink" style="padding:0.35rem 0.6rem" onclick="encerrarPeca('${r.id}')">Encerrar</button> <button class="btn" style="padding:0.35rem 0.5rem" onclick="excluirPecaAberta('${r.id}')">✕</button></td>
+    </tr>`;
+  }).join('');
+}
+
+async function adicionarVenda(id) {
+  const el = document.getElementById('venda-' + id);
+  const q = parseFloat(el ? el.value : 0) || 0;
+  if (q <= 0) { alert('Digite a quantidade vendida (kg).'); return; }
+  const dEl = document.getElementById('vdata-' + id);
+  const data = brParaISO(dEl ? dEl.value : '') || new Date().toISOString().slice(0, 10);
+  const r = RENDIMENTOS.find(x => x.id === id); if (!r) return;
+  r.movimentos = r.movimentos || [];
+  r.movimentos.push({ data, qtd: Math.round(q * 1000) / 1000 });
+  r.pesoVendido = Math.round(r.movimentos.reduce((s, m) => s + (m.qtd || 0), 0) * 1000) / 1000;
+  await salvarRendimentos(); renderPecasAbertas();
+}
+
+async function encerrarPeca(id) {
+  const r = RENDIMENTOS.find(x => x.id === id); if (!r) return;
+  if ((r.pesoVendido || 0) <= 0 && !confirm('Esta peça não teve venda lançada. Encerrar mesmo assim?')) return;
+  r.status = 'encerrada';
+  r.dataFim = new Date().toISOString().slice(0, 10);
+  r.aproveitamento = r.pesoRecebido > 0 ? Math.round(r.pesoVendido / r.pesoRecebido * 10000) / 100 : 0;
+  await salvarRendimentos(); renderPecasAbertas(); renderRendimento();
+  alert('Peça encerrada. Aproveitamento: ' + r.aproveitamento.toFixed(1) + '%');
+}
+
+async function excluirPecaAberta(id) {
+  if (!confirm('Excluir esta peça aberta?')) return;
+  RENDIMENTOS = RENDIMENTOS.filter(x => x.id !== id);
+  await salvarRendimentos(); renderPecasAbertas();
+}
 
 function popularProdList() {
   const dl = document.getElementById('rProdList'); if (!dl) return;
@@ -2119,7 +2224,8 @@ async function registrarRendimento() {
     dataFim: brParaISO(document.getElementById('rDataFim').value),
     pesoRecebido: Math.round(rec * 1000) / 1000,
     pesoVendido: Math.round(ven * 1000) / 1000,
-    aproveitamento: Math.round(ven / rec * 10000) / 100
+    aproveitamento: Math.round(ven / rec * 10000) / 100,
+    status: 'encerrada'
   });
   await salvarRendimentos(); renderRendimento();
   ['rProduto', 'rRecebido', 'rVendido', 'rDataReceb', 'rDataFim'].forEach(id => document.getElementById(id).value = '');
@@ -2133,6 +2239,7 @@ function renderRendimento() {
   const q = normNome((document.getElementById('rBusca') || {}).value || '');
   const grupos = {};
   RENDIMENTOS.forEach(r => {
+    if (r.status === 'aberta') return;   // só peças encerradas contam no aproveitamento
     const k = normNome(r.produto);
     if (q && !k.includes(q)) return;
     if (!grupos[k]) grupos[k] = { nome: r.produto, pecas: 0, rec: 0, ven: 0 };
