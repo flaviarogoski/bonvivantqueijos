@@ -556,6 +556,7 @@ table.imp-grid tr.is-header td.rownum { background: var(--ink); color: var(--beg
       Selecionar XML
       <input type="file" id="xmlInput" accept=".xml" />
     </label>
+    <p style="margin-top:0.75rem"><a href="#" onclick="abrirManual();return false;" style="color:var(--ink-mid);font-family:var(--font-sans);font-weight:900;font-size:11px;letter-spacing:0.06em;text-transform:uppercase">ou preencher manualmente (sem XML)</a></p>
   </div>
 
   <!-- CONTEÚDO -->
@@ -747,6 +748,15 @@ table.imp-grid tr.is-header td.rownum { background: var(--ink); color: var(--beg
         </div>
       </div>
       <div id="oItens"><div class="empty-state">Selecione um fornecedor para listar os produtos.</div></div>
+      <div class="toolbar" style="margin-top:0.6rem;align-items:flex-end;background:var(--bege-dark);padding:0.6rem 0.75rem;border-radius:var(--radius)">
+        <div class="field-inline" style="min-width:220px;flex:1">
+          <label>+ Adicionar produto (qualquer fornecedor)</label>
+          <input type="text" id="oAddProd" list="oAddList" placeholder="digite ou escolha…" autocomplete="off" oninput="oAddPrecoAuto()">
+          <datalist id="oAddList"></datalist>
+        </div>
+        <div class="field-inline"><label>Preço (R$)</label><input type="number" id="oAddPreco" min="0" step="0.01" style="width:110px"></div>
+        <button class="btn btn-ink" onclick="adicionarProdutoOrc()">+ Adicionar ao orçamento</button>
+      </div>
       <div class="field-inline" style="margin-top:1rem">
         <label>Observação (opcional — entra no .txt)</label>
         <textarea id="oObs" rows="2" style="font-family:var(--font-sans);font-size:13px;padding:0.5rem;border:1px solid var(--border);border-radius:var(--radius);background:#fff;color:var(--ink);resize:vertical"></textarea>
@@ -916,6 +926,31 @@ table.imp-grid tr.is-header td.rownum { background: var(--ink); color: var(--beg
     <input type="text" id="gateCode" placeholder="digite seu código de acesso" onkeydown="if(event.key==='Enter')entrarWorkspace()" autocomplete="off" />
     <button class="btn btn-ink" onclick="entrarWorkspace()">Entrar</button>
     <div class="g-msg" id="gateMsg"></div>
+  </div>
+</div>
+
+<!-- ════════ MODAL: PRECIFICAR MANUALMENTE (SEM XML) ════════ -->
+<div class="modal-overlay" id="manualModal">
+  <div class="modal-box">
+    <div class="modal-head">
+      <h3>Precificar manualmente</h3>
+      <button class="modal-x" onclick="fecharManual()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="imp-row">
+        <div class="field-inline" style="min-width:200px;flex:1"><label>Fornecedor (opcional)</label><input type="text" id="mfForn" placeholder="ex: Colavita"></div>
+        <div class="field-inline"><label>UF de origem</label><input type="text" id="mfUF" value="PR" maxlength="2" style="width:70px;text-transform:uppercase"></div>
+        <div class="field-inline"><label>&nbsp;</label><label style="font-family:var(--font-sans);font-size:12px;font-weight:700;display:flex;align-items:center;gap:0.35rem;cursor:pointer"><input type="checkbox" id="mfSimples"> Fornecedor do Simples</label></div>
+      </div>
+      <p class="imp-step">Produtos (custo unitário) — adicione quantos precisar</p>
+      <div id="mfItens"></div>
+      <button class="btn" onclick="addMfRow()" style="margin-top:0.4rem">+ Adicionar produto</button>
+      <p class="imp-hint" style="margin-top:0.75rem">O ICMS % é o da compra (interestadual). A UF de origem define se incide DIFAL (vendas no PR). Depois você ajusta margem, fator e cartão normalmente.</p>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" onclick="fecharManual()">Cancelar</button>
+      <button class="btn btn-ink" onclick="precificarManual()">Precificar</button>
+    </div>
   </div>
 </div>
 
@@ -1552,6 +1587,58 @@ function parseNF(xmlStr, arquivo) {
   });
 }
 
+/* ═══════════ PRECIFICAR MANUALMENTE (sem XML) ═══════════ */
+function mfRowHTML() {
+  return `<div class="mf-row" style="display:flex;gap:0.5rem;margin-bottom:0.45rem;align-items:flex-end">
+    <input class="mf-nome" placeholder="produto" style="flex:1;min-width:140px;font-family:var(--font-sans);font-size:13px;padding:0.45rem;border:1px solid var(--border);border-radius:var(--radius)">
+    <input class="mf-custo" type="number" min="0" step="0.01" placeholder="custo R$" style="width:100px;font-family:var(--font-sans);font-size:13px;padding:0.45rem;border:1px solid var(--border);border-radius:var(--radius)">
+    <select class="mf-unid" style="width:72px;font-family:var(--font-sans);font-size:13px;padding:0.45rem;border:1px solid var(--border);border-radius:var(--radius)"><option>KG</option><option>UN</option></select>
+    <input class="mf-icms" type="number" min="0" step="0.1" placeholder="ICMS %" value="12" title="ICMS % da compra" style="width:82px;font-family:var(--font-sans);font-size:13px;padding:0.45rem;border:1px solid var(--border);border-radius:var(--radius)">
+    <button class="btn" onclick="this.closest('.mf-row').remove()" style="padding:0.4rem 0.55rem" title="remover">✕</button>
+  </div>`;
+}
+function addMfRow() { document.getElementById('mfItens').insertAdjacentHTML('beforeend', mfRowHTML()); }
+function abrirManual() {
+  document.getElementById('mfForn').value = '';
+  document.getElementById('mfUF').value = 'PR';
+  document.getElementById('mfSimples').checked = false;
+  document.getElementById('mfItens').innerHTML = mfRowHTML();
+  document.getElementById('manualModal').classList.add('on');
+}
+function fecharManual() { document.getElementById('manualModal').classList.remove('on'); }
+function precificarManual() {
+  const forn = (document.getElementById('mfForn').value || '').trim() || 'Manual';
+  const uf = ((document.getElementById('mfUF').value || '').trim() || 'PR').toUpperCase();
+  const simples = document.getElementById('mfSimples').checked;
+  const itens = [];
+  document.querySelectorAll('#mfItens .mf-row').forEach(row => {
+    const nome = (row.querySelector('.mf-nome').value || '').trim();
+    const custo = parseFloat(row.querySelector('.mf-custo').value) || 0;
+    const unid = (row.querySelector('.mf-unid').value || 'UN').trim();
+    const icms = parseFloat(row.querySelector('.mf-icms').value) || 0;
+    if (!nome || custo <= 0) return;
+    itens.push({ nome, cProd: '', uCom: unid, uTrib: unid, qCom: 1, qTrib: 1, qtdBase: 1, custoUn: custo, porCaixa: '',
+      vProd: custo, pICMS: icms, vICMS: 0, cst: '', csosn: '', temST: false, pisIsen: false, ncm: '', cfop: '' });
+  });
+  if (!itens.length) { alert('Informe ao menos um produto com custo.'); return; }
+  const icmsInterMedio = itens.reduce((s, i) => s + i.pICMS, 0) / itens.length;
+  const interestadual = uf !== 'PR';
+  const totalProd = itens.reduce((s, i) => s + i.vProd, 0);
+  nfData = {
+    emitNome: forn, emitUF: uf, emitCNPJ: '', emitCRT: simples ? '1' : '3', fornecedorSimples: simples,
+    destNome: '', destUF: 'PR', nNF: '', data: isoParaBR(new Date().toISOString()), chNFe: '', arquivo: 'manual',
+    vNF: totalProd, vProdTotal: totalProd, vFrete: 0, fretePct: 0, modFrete: '9',
+    interestadual, icmsInterMedio, itens
+  };
+  const mcPad = parseFloat((document.getElementById('pMC') || {}).value) || 60;
+  const intPad = parseFloat((document.getElementById('pIcmsInterno') || {}).value) || 12;
+  fatores = itens.map(() => 1.00);
+  mcs = itens.map(() => mcPad);
+  difalItem = itens.map(it => interestadual && !simples && !it.temST && (it.pICMS < intPad));
+  fecharManual();
+  renderNF();
+}
+
 function renderNF() {
   document.getElementById('placeholder').style.display = 'none';
   document.getElementById('conteudo').style.display    = 'block';
@@ -1833,27 +1920,55 @@ function produtosDoForn(nome) {
     .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
 }
 
+let orcExtras = [];
+function popularAddList() {
+  const dl = document.getElementById('oAddList'); if (!dl) return;
+  const nomes = [...new Set(Object.values(BANCO.produtos || {}).map(p => p.nome).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+  dl.innerHTML = nomes.map(n => `<option value="${esc(n)}"></option>`).join('');
+}
+function oAddPrecoAuto() {
+  const nome = (document.getElementById('oAddProd').value || '').trim();
+  const entry = Object.values(BANCO.produtos || {}).find(p => normNome(p.nome) === normNome(nome));
+  if (entry) document.getElementById('oAddPreco').value = refPreco(entry).custo;
+}
+function adicionarProdutoOrc() {
+  const nome = (document.getElementById('oAddProd').value || '').trim();
+  if (!nome) { alert('Informe o produto.'); return; }
+  let preco = parseFloat(document.getElementById('oAddPreco').value) || 0;
+  const ent = Object.entries(BANCO.produtos || {}).find(([k, p]) => normNome(p.nome) === normNome(nome));
+  let uTrib = '', porCaixa = '', _key = '', forn = 'avulso';
+  if (ent) { const p = ent[1]; uTrib = p.uTrib || ''; porCaixa = p.porCaixa || ''; _key = ent[0]; forn = p.fornecedorNome || ''; if (!preco) preco = refPreco(p).custo; }
+  orcExtras.push({ nome, uTrib, porCaixa, preco: Math.round(preco * 100) / 100, _key, fornecedor: forn });
+  document.getElementById('oAddProd').value = ''; document.getElementById('oAddPreco').value = '';
+  montarOrcItens();
+}
+function removerExtraOrc(idx) { orcExtras.splice(idx, 1); montarOrcItens(); }
+
 function montarOrcItens() {
   const nome = document.getElementById('oForn').value;
   const box = document.getElementById('oItens');
-  if (!nome) { box.innerHTML = '<div class="empty-state">Selecione um fornecedor para listar os produtos.</div>'; box._n = 0; calcOrcTotal(); return; }
-  const prods = produtosDoForn(nome);
-  if (!prods.length) { box.innerHTML = '<div class="empty-state">Sem produtos (compra ou tabela) para este fornecedor.</div>'; box._n = 0; calcOrcTotal(); return; }
+  popularAddList();
+  const prods = nome ? produtosDoForn(nome) : [];
+  const extras = orcExtras.map((e, idx) => Object.assign({}, e, { _extra: true, _extraIdx: idx }));
+  const todos = prods.concat(extras);
+  if (!todos.length) { box.innerHTML = '<div class="empty-state">Selecione um fornecedor, ou use “+ Adicionar produto” abaixo.</div>'; box._n = 0; calcOrcTotal(); return; }
   box.innerHTML = `<div class="items-wrap"><table class="data-table">
     <thead><tr><th>Produto</th><th>Por caixa</th><th style="text-align:right">Preço (R$)</th><th style="text-align:center">Qtde</th><th style="text-align:right">Subtotal</th></tr></thead>
-    <tbody>${prods.map((p, i) => {
-      const r = refPreco(p);
-      const fonte = r.fonte === 'manual' ? 'preço editado' : (r.fonte === 'tabela' ? 'tabela' : (r.data ? 'últ. compra ' + isoParaBR(r.data) : ''));
+    <tbody>${todos.map((p, i) => {
+      let precoItem, fonte, pkey;
+      if (p._extra) { precoItem = p.preco; fonte = 'de ' + (p.fornecedor || 'avulso'); pkey = p._key || ''; }
+      else { const r = refPreco(p); precoItem = r.custo; pkey = p._key || ''; fonte = r.fonte === 'manual' ? 'preço editado' : (r.fonte === 'tabela' ? 'tabela' : (r.data ? 'últ. compra ' + isoParaBR(r.data) : '')); }
       const cx = p.porCaixa || (/\d/.test(p.uTrib || '') ? p.uTrib : '');
+      const rem = p._extra ? ` <button class="btn" style="padding:0.1rem 0.4rem;font-size:10px" onclick="removerExtraOrc(${p._extraIdx})" title="remover">✕</button>` : '';
       return `<tr>
-        <td>${esc(p.nome)}${fonte ? `<br><span style="font-size:10px;color:var(--ink-light)">${fonte}</span>` : ''}</td>
+        <td>${esc(p.nome)}${rem}${fonte ? `<br><span style="font-size:10px;color:var(--ink-light)">${esc(fonte)}</span>` : ''}</td>
         <td style="font-size:12px;color:var(--ink-mid)">${esc(cx || '—')}</td>
-        <td style="text-align:right"><input type="number" min="0" step="0.01" id="op${i}" data-pkey="${esc(p._key || '')}" data-orig="${r.custo}" value="${r.custo}" oninput="calcOrcTotal()" style="width:100px;text-align:right;font-family:var(--font-serif);font-weight:700;padding:0.4rem;border:1px solid var(--border);border-radius:var(--radius)"></td>
+        <td style="text-align:right"><input type="number" min="0" step="0.01" id="op${i}" data-pkey="${esc(pkey)}" data-orig="${precoItem}" value="${precoItem}" oninput="calcOrcTotal()" style="width:100px;text-align:right;font-family:var(--font-serif);font-weight:700;padding:0.4rem;border:1px solid var(--border);border-radius:var(--radius)"></td>
         <td style="text-align:center"><input type="number" min="0" step="0.01" id="oq${i}" data-nome="${esc(p.nome)}" data-u="${esc(p.uTrib || '')}" placeholder="0" oninput="calcOrcTotal()" style="width:90px;text-align:right;font-family:var(--font-sans);padding:0.4rem;border:1px solid var(--border);border-radius:var(--radius)"></td>
         <td class="num" id="osub${i}">—</td>
       </tr>`;
     }).join('')}</tbody></table></div>`;
-  box._n = prods.length;
+  box._n = todos.length;
   calcOrcTotal();
 }
 
@@ -1904,6 +2019,7 @@ function proximoNumero() {
 
 function novoOrcamento() {
   orcEditando = null;
+  orcExtras = [];
   const f = document.getElementById('oForn'); if (f) f.value = '';
   const dt = document.getElementById('oData'); if (dt) dt.value = isoParaBR(new Date().toISOString());
   const nm = document.getElementById('oNumero'); if (nm) nm.value = proximoNumero();
@@ -1981,10 +2097,22 @@ function reabrirOrcamento(numero) {
   document.getElementById('oNumero').value = o.numero;
   document.getElementById('oData').value = isoParaBR(o.data);
   document.getElementById('oObs').value = o.obs || '';
+  // reconstrói os "extras": itens salvos que não pertencem ao fornecedor selecionado
+  const nomesForn = new Set(produtosDoForn(o.fornecedorNome).map(p => normNome(p.nome)));
+  orcExtras = (o.itens || []).filter(it => !nomesForn.has(normNome(it.nome))).map(it => {
+    const ent = Object.entries(BANCO.produtos || {}).find(([k, p]) => normNome(p.nome) === normNome(it.nome));
+    return { nome: it.nome, uTrib: it.uTrib || (ent ? ent[1].uTrib || '' : ''), porCaixa: ent ? ent[1].porCaixa || '' : '', preco: it.custoRef, _key: ent ? ent[0] : '', fornecedor: ent ? ent[1].fornecedorNome || '' : 'avulso' };
+  });
   montarOrcItens();
   const box = document.getElementById('oItens'); const n = box._n || 0;
-  const map = {}; o.itens.forEach(it => map[it.nome] = it.qtd);
-  for (let i = 0; i < n; i++) { const el = document.getElementById('oq' + i); if (el && map[el.dataset.nome] != null) el.value = map[el.dataset.nome]; }
+  const qtyMap = {}, priceMap = {}; o.itens.forEach(it => { qtyMap[normNome(it.nome)] = it.qtd; priceMap[normNome(it.nome)] = it.custoRef; });
+  for (let i = 0; i < n; i++) {
+    const elQ = document.getElementById('oq' + i); if (!elQ) continue;
+    const nm = normNome(elQ.dataset.nome);
+    if (qtyMap[nm] != null) elQ.value = qtyMap[nm];
+    const elP = document.getElementById('op' + i);
+    if (elP && priceMap[nm] != null) elP.value = priceMap[nm];
+  }
   calcOrcTotal();
   switchTab('orcamento'); window.scrollTo(0, 0);
 }
@@ -2166,6 +2294,7 @@ async function abrirPeca() {
   document.getElementById('paProduto').focus();
 }
 
+let pecasDetalhe = new Set();
 function renderPecasAbertas() {
   const tbody = document.getElementById('paTbody'); if (!tbody) return;
   const empty = document.getElementById('paEmpty');
@@ -2173,14 +2302,15 @@ function renderPecasAbertas() {
   if (!abertas.length) { tbody.innerHTML = ''; if (empty) empty.style.display = 'block'; return; }
   if (empty) empty.style.display = 'none';
   const hoje = isoParaBR(new Date().toISOString());
-  tbody.innerHTML = abertas.map(r => {
+  let html = '';
+  abertas.forEach(r => {
     const rest = (r.pesoRecebido || 0) - (r.pesoVendido || 0);
     const movs = r.movimentos || [];
-    const ultima = movs.length ? movs[movs.length - 1] : null;
-    return `<tr>
+    const aberto = pecasDetalhe.has(r.id);
+    html += `<tr>
       <td>${esc(r.produto)}<br><span style="font-size:10px;color:var(--ink-light)">aberta ${isoParaBR(r.dataReceb)}</span></td>
-      <td class="num">${fmt(r.pesoRecebido)}</td>
-      <td class="num">${fmt(r.pesoVendido)}${ultima ? `<br><span style="font-size:9px;color:var(--ink-light)">${movs.length} lanç. · últ. ${isoParaBR(ultima.data)}</span>` : ''}</td>
+      <td class="num"><input type="number" min="0" step="0.001" value="${r.pesoRecebido}" onchange="editarRecebido('${r.id}',this.value)" title="editar peso recebido" style="width:80px;text-align:right;font-family:var(--font-serif);font-weight:700;padding:0.3rem;border:1px solid var(--border);border-radius:var(--radius)"></td>
+      <td class="num">${fmt(r.pesoVendido)}${movs.length ? ` <button class="btn" style="padding:0.1rem 0.4rem;font-size:9px" onclick="toggleDetalhe('${r.id}')">${aberto ? '▲' : '▼'} ${movs.length}</button>` : ''}</td>
       <td class="num" style="color:${rest < 0 ? '#b3261e' : 'inherit'}">${fmt(rest)}</td>
       <td style="text-align:center;white-space:nowrap">
         <input type="number" min="0" step="0.001" id="venda-${r.id}" placeholder="kg" onkeydown="if(event.key==='Enter')adicionarVenda('${r.id}')" style="width:66px;text-align:right;font-family:var(--font-sans);padding:0.35rem;border:1px solid var(--border);border-radius:var(--radius)">
@@ -2189,7 +2319,37 @@ function renderPecasAbertas() {
       </td>
       <td style="text-align:center;white-space:nowrap"><button class="btn btn-ink" style="padding:0.35rem 0.6rem" onclick="encerrarPeca('${r.id}')">Encerrar</button> <button class="btn" style="padding:0.35rem 0.5rem" onclick="excluirPecaAberta('${r.id}')">✕</button></td>
     </tr>`;
-  }).join('');
+    if (aberto && movs.length) {
+      const linhas = movs.map((m, idx) => `<div style="display:flex;gap:0.6rem;align-items:center;padding:0.15rem 0">
+        <span style="font-family:var(--font-sans);font-size:12px;min-width:96px">${isoParaBR(m.data)}</span>
+        <span class="num" style="min-width:80px">${fmt(m.qtd)} kg</span>
+        <button class="btn" style="padding:0.1rem 0.45rem;font-size:10px" onclick="removerVenda('${r.id}',${idx})" title="remover este lançamento">✕ remover</button>
+      </div>`).join('');
+      html += `<tr><td colspan="6" style="background:var(--bege-dark);padding:0.5rem 1rem">
+        <div style="font-size:10px;font-weight:900;letter-spacing:0.06em;text-transform:uppercase;color:var(--ink-light);margin-bottom:0.3rem">Lançamentos de venda desta peça</div>
+        ${linhas}
+      </td></tr>`;
+    }
+  });
+  tbody.innerHTML = html;
+}
+
+async function editarRecebido(id, val) {
+  const v = parseFloat(val) || 0;
+  const r = RENDIMENTOS.find(x => x.id === id); if (!r) return;
+  r.pesoRecebido = Math.round(v * 1000) / 1000;
+  await salvarRendimentos(); renderPecasAbertas();
+}
+function toggleDetalhe(id) {
+  if (pecasDetalhe.has(id)) pecasDetalhe.delete(id); else pecasDetalhe.add(id);
+  renderPecasAbertas();
+}
+async function removerVenda(id, idx) {
+  const r = RENDIMENTOS.find(x => x.id === id); if (!r || !r.movimentos) return;
+  if (!confirm('Remover este lançamento de venda?')) return;
+  r.movimentos.splice(idx, 1);
+  r.pesoVendido = Math.round(r.movimentos.reduce((s, m) => s + (m.qtd || 0), 0) * 1000) / 1000;
+  await salvarRendimentos(); renderPecasAbertas();
 }
 
 async function adicionarVenda(id) {
