@@ -1228,6 +1228,7 @@ function parsePreco(v) {
 }
 /* Preço de referência de um produto: compra (NF) tem prioridade; senão tabela */
 function refPreco(p) {
+  if (p.precoManual != null) return { custo: p.precoManual, data: p.dataManual || '', fonte: 'manual' };
   if (p.historico && p.historico.length) return { custo: p.historico[0].custo, data: p.historico[0].data, fonte: 'compra' };
   if (p.precoTabela != null) return { custo: p.precoTabela, data: p.dataTabela || '', fonte: 'tabela' };
   return { custo: 0, data: '', fonte: '' };
@@ -1403,6 +1404,7 @@ async function salvarNFnoBanco(d) {
     const pkey = key + '|' + normNome(it.nome);
     if (!BANCO.produtos[pkey]) BANCO.produtos[pkey] = { nome: it.nome, fornecedorCNPJ: d.emitCNPJ, fornecedorNome: d.emitNome, uTrib: it.uTrib, historico: [] };
     const p = BANCO.produtos[pkey];
+    if (it.porCaixa) p.porCaixa = it.porCaixa;   // conteúdo por caixa vindo da NF (ex: "20 KG/CX")
     const id = dataISO + '|' + d.nNF;
     if (!p.historico.some(h => h.data + '|' + h.nf === id)) {
       p.historico.push({ data: dataISO, nf: d.nNF, custo: Math.round(it.custoUn * 10000) / 10000, icms: Math.round(it.pICMS) });
@@ -1490,9 +1492,12 @@ function parseNF(xmlStr, arquivo) {
     const custoUn= uTrib === 'KG' && vUnTrib > 0 ? vUnTrib : vUnCom;
     const qtdBase= uTrib === 'KG' && qTrib > 0 ? qTrib : qCom;
 
+    // Conteúdo por caixa: quando a unidade comercial (ex: CX) difere da tributável (ex: KG/UN)
+    const porCaixa = (uCom && uTrib && uCom !== uTrib && qCom > 0 && qTrib > 0)
+      ? (Math.round(qTrib / qCom * 1000) / 1000) + ' ' + uTrib + '/' + uCom : '';
     return {
       nome: g(prod,'xProd'), cProd: g(prod,'cProd'),
-      uCom, uTrib, qCom, qTrib, qtdBase, custoUn,
+      uCom, uTrib, qCom, qTrib, qtdBase, custoUn, porCaixa,
       vProd: parseFloat(g(prod,'vProd')) || 0,
       pICMS: icmsEl ? parseFloat(g(icmsEl,'pICMS')) || 0 : 0,
       vICMS: icmsEl ? parseFloat(g(icmsEl,'vICMS')) || 0 : 0,
@@ -1822,8 +1827,9 @@ function popularFornOrc() {
 }
 
 function produtosDoForn(nome) {
-  return Object.values(BANCO.produtos || {})
-    .filter(p => p.fornecedorNome === nome && ((p.historico && p.historico.length) || p.precoTabela != null))
+  return Object.entries(BANCO.produtos || {})
+    .filter(([k, p]) => p.fornecedorNome === nome && ((p.historico && p.historico.length) || p.precoTabela != null || p.precoManual != null))
+    .map(([k, p]) => Object.assign({ _key: k }, p))
     .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
 }
 
@@ -1834,14 +1840,16 @@ function montarOrcItens() {
   const prods = produtosDoForn(nome);
   if (!prods.length) { box.innerHTML = '<div class="empty-state">Sem produtos (compra ou tabela) para este fornecedor.</div>'; box._n = 0; calcOrcTotal(); return; }
   box.innerHTML = `<div class="items-wrap"><table class="data-table">
-    <thead><tr><th>Produto</th><th style="text-align:right">Preço ref.</th><th style="text-align:center">Qtde</th><th style="text-align:right">Subtotal</th></tr></thead>
+    <thead><tr><th>Produto</th><th>Por caixa</th><th style="text-align:right">Preço (R$)</th><th style="text-align:center">Qtde</th><th style="text-align:right">Subtotal</th></tr></thead>
     <tbody>${prods.map((p, i) => {
       const r = refPreco(p);
-      const fonte = r.fonte === 'tabela' ? 'tabela' : (r.data ? 'últ. ' + isoParaBR(r.data) : '');
+      const fonte = r.fonte === 'manual' ? 'preço editado' : (r.fonte === 'tabela' ? 'tabela' : (r.data ? 'últ. compra ' + isoParaBR(r.data) : ''));
+      const cx = p.porCaixa || (/\d/.test(p.uTrib || '') ? p.uTrib : '');
       return `<tr>
-        <td>${esc(p.nome)}<br><span style="font-size:10px;color:var(--ink-light)">${esc(p.uTrib || '')}${fonte ? ' · ' + fonte : ''}</span></td>
-        <td class="num">R$ ${fmt(r.custo)}</td>
-        <td style="text-align:center"><input type="number" min="0" step="0.01" id="oq${i}" data-ref="${r.custo}" data-nome="${esc(p.nome)}" data-u="${esc(p.uTrib || '')}" placeholder="0" oninput="calcOrcTotal()" style="width:90px;text-align:right;font-family:var(--font-sans);padding:0.4rem;border:1px solid var(--border);border-radius:var(--radius)"></td>
+        <td>${esc(p.nome)}${fonte ? `<br><span style="font-size:10px;color:var(--ink-light)">${fonte}</span>` : ''}</td>
+        <td style="font-size:12px;color:var(--ink-mid)">${esc(cx || '—')}</td>
+        <td style="text-align:right"><input type="number" min="0" step="0.01" id="op${i}" data-pkey="${esc(p._key || '')}" data-orig="${r.custo}" value="${r.custo}" oninput="calcOrcTotal()" style="width:100px;text-align:right;font-family:var(--font-serif);font-weight:700;padding:0.4rem;border:1px solid var(--border);border-radius:var(--radius)"></td>
+        <td style="text-align:center"><input type="number" min="0" step="0.01" id="oq${i}" data-nome="${esc(p.nome)}" data-u="${esc(p.uTrib || '')}" placeholder="0" oninput="calcOrcTotal()" style="width:90px;text-align:right;font-family:var(--font-sans);padding:0.4rem;border:1px solid var(--border);border-radius:var(--radius)"></td>
         <td class="num" id="osub${i}">—</td>
       </tr>`;
     }).join('')}</tbody></table></div>`;
@@ -1854,8 +1862,9 @@ function coletarOrcItens() {
   for (let i = 0; i < n; i++) {
     const el = document.getElementById('oq' + i); if (!el) continue;
     const q = parseFloat(el.value) || 0; if (q <= 0) continue;
-    const ref = parseFloat(el.dataset.ref) || 0;
-    itens.push({ nome: el.dataset.nome, uTrib: el.dataset.u, qtd: q, custoRef: ref, subtotal: Math.round(q * ref * 100) / 100 });
+    const elP = document.getElementById('op' + i);
+    const preco = parseFloat(elP ? elP.value : 0) || 0;
+    itens.push({ nome: el.dataset.nome, uTrib: el.dataset.u, qtd: q, custoRef: preco, subtotal: Math.round(q * preco * 100) / 100 });
   }
   return itens;
 }
@@ -1864,11 +1873,28 @@ function calcOrcTotal() {
   const box = document.getElementById('oItens'); const n = box ? (box._n || 0) : 0; let total = 0;
   for (let i = 0; i < n; i++) {
     const el = document.getElementById('oq' + i); if (!el) continue;
-    const q = parseFloat(el.value) || 0, ref = parseFloat(el.dataset.ref) || 0, s = q * ref;
+    const elP = document.getElementById('op' + i);
+    const q = parseFloat(el.value) || 0, preco = parseFloat(elP ? elP.value : 0) || 0, s = q * preco;
     setTxt('osub' + i, s > 0 ? 'R$ ' + fmt(s) : '—'); total += s;
   }
   setTxt('oTotal', 'Total: R$ ' + fmt(total));
   return total;
+}
+
+/* Persiste os preços editados no orçamento como novo preço de referência (precoManual) */
+async function persistirPrecosEditados() {
+  const box = document.getElementById('oItens'); const n = box ? (box._n || 0) : 0; let mudou = 0;
+  for (let i = 0; i < n; i++) {
+    const elP = document.getElementById('op' + i); if (!elP) continue;
+    const pk = elP.dataset.pkey, novo = parseFloat(elP.value), orig = parseFloat(elP.dataset.orig);
+    if (pk && BANCO.produtos[pk] && !isNaN(novo) && novo > 0 && novo !== orig) {
+      BANCO.produtos[pk].precoManual = Math.round(novo * 100) / 100;
+      BANCO.produtos[pk].dataManual = new Date().toISOString().slice(0, 10);
+      mudou++;
+    }
+  }
+  if (mudou) await salvarBanco();
+  return mudou;
 }
 
 function proximoNumero() {
@@ -1905,8 +1931,10 @@ function montarOrcObj(status) {
 async function salvarOrcamento(status) {
   const o = montarOrcObj(status); if (!o) return null;
   ORCAMENTOS[o.numero] = o; orcEditando = o.numero;
-  await salvarOrcamentos(); renderOrcSalvos();
-  alert('Orçamento ' + o.numero + ' salvo (' + o.status + ').');
+  await salvarOrcamentos();
+  const nPrecos = await persistirPrecosEditados();   // preços editados viram referência do produto
+  renderOrcSalvos();
+  alert('Orçamento ' + o.numero + ' salvo (' + o.status + ').' + (nPrecos ? '\n' + nPrecos + ' preço(s) de produto atualizado(s).' : ''));
   return o;
 }
 
