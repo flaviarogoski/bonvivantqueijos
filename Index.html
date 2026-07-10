@@ -1018,6 +1018,7 @@ let nfData = null;
 let fatores = [];
 let mcs = [];
 let difalItem = [];
+let fatorFonte = [];   // true quando o fator veio do aproveitamento medido no Rendimento
 
 /* ══════════════════════════════════════════════════════════
    CONFIGURAÇÃO — preencher ao publicar (Supabase)
@@ -1451,6 +1452,19 @@ async function salvarNFnoBanco(d) {
   popularFornHist();
 }
 
+/* Fator de correção sugerido a partir do Rendimento (aproveitamento médio ponderado das peças encerradas) */
+function fatorSugerido(nomeProduto) {
+  const k = normNome(nomeProduto);
+  let rec = 0, ven = 0;
+  (RENDIMENTOS || []).forEach(r => {
+    if (r.status === 'aberta') return;
+    if (normNome(r.produto) !== k) return;
+    rec += r.pesoRecebido || 0; ven += r.pesoVendido || 0;
+  });
+  if (rec <= 0) return null;
+  return Math.min(1, Math.max(0.05, Math.round(ven / rec * 10000) / 10000));
+}
+
 /* ── Custo da compra anterior (para variação na precificação) ── */
 function custoAnterior(it) {
   if (!nfData) return null;
@@ -1569,7 +1583,9 @@ function parseNF(xmlStr, arquivo) {
   // Defaults por item (margem global + regra automática de DIFAL/antecipação)
   const mcPad  = parseFloat((document.getElementById('pMC') || {}).value) || 60;
   const intPad = parseFloat((document.getElementById('pIcmsInterno') || {}).value) || 12;
-  fatores   = itens.map(() => 1.00);
+  // Fator de correção: usa o aproveitamento medido no Rendimento quando existir; senão 1.00
+  fatorFonte = itens.map(it => fatorSugerido(it.nome) != null);
+  fatores   = itens.map(it => { const f = fatorSugerido(it.nome); return f != null ? f : 1.00; });
   mcs       = itens.map(() => mcPad);
   // DIFAL aplica se: interestadual, fornecedor NÃO Simples, item NÃO em ST, e interestadual < interna
   difalItem = itens.map(it => nfData.interestadual && !fornecedorSimples && !it.temST && (it.pICMS < intPad));
@@ -1632,7 +1648,8 @@ function precificarManual() {
   };
   const mcPad = parseFloat((document.getElementById('pMC') || {}).value) || 60;
   const intPad = parseFloat((document.getElementById('pIcmsInterno') || {}).value) || 12;
-  fatores = itens.map(() => 1.00);
+  fatorFonte = itens.map(it => fatorSugerido(it.nome) != null);
+  fatores = itens.map(it => { const f = fatorSugerido(it.nome); return f != null ? f : 1.00; });
   mcs = itens.map(() => mcPad);
   difalItem = itens.map(it => interestadual && !simples && !it.temST && (it.pICMS < intPad));
   fecharManual();
@@ -1727,8 +1744,9 @@ function buildCards() {
         <h4>${esc(it.nome)}${deltaBadge}${stTag}</h4>
         <div class="item-controls">
           <div class="field-inline" style="width:120px">
-            <label>Fator correção</label>
+            <label>Fator correção${fatorFonte[i] ? ' <span title="sugerido pelo aproveitamento medido no Rendimento" style="color:#1e6e18">●</span>' : ''}</label>
             <input type="number" id="fator${i}" value="${fatores[i].toFixed(4)}" step="0.01" min="0.05" max="1" onchange="setFator(${i},this.value)" />
+            ${fatorFonte[i] ? `<span class="hint" style="color:#1e6e18">rendimento: ${(fatores[i]*100).toFixed(1)}%</span>` : ''}
           </div>
           <div class="field-inline" style="flex:1;min-width:190px">
             <label>Margem de contribuição: <b id="r_mclbl_${i}">${mcs[i]}%</b></label>
@@ -1823,6 +1841,7 @@ function recalc() {
 /* ── Setters por item ── */
 function setFator(i, val) {
   fatores[i] = Math.min(1, Math.max(0.05, parseFloat(val) || 1));
+  fatorFonte[i] = false;   // editado à mão — deixa de ser "sugerido pelo rendimento"
   const el = document.getElementById('fator' + i); if (el) el.value = fatores[i].toFixed(4);
   recalc();
 }
@@ -2421,6 +2440,7 @@ async function registrarRendimento() {
   document.getElementById('rProduto').focus();
 }
 
+let rGrupoDetalhe = new Set();
 function renderRendimento() {
   const tbody = document.getElementById('rTbody'); if (!tbody) return;
   const empty = document.getElementById('rEmpty');
@@ -2430,24 +2450,64 @@ function renderRendimento() {
     if (r.status === 'aberta') return;   // só peças encerradas contam no aproveitamento
     const k = normNome(r.produto);
     if (q && !k.includes(q)) return;
-    if (!grupos[k]) grupos[k] = { nome: r.produto, pecas: 0, rec: 0, ven: 0 };
-    grupos[k].pecas++; grupos[k].rec += r.pesoRecebido || 0; grupos[k].ven += r.pesoVendido || 0;
+    if (!grupos[k]) grupos[k] = { key: k, nome: r.produto, pecas: 0, rec: 0, ven: 0, itens: [] };
+    grupos[k].pecas++; grupos[k].rec += r.pesoRecebido || 0; grupos[k].ven += r.pesoVendido || 0; grupos[k].itens.push(r);
   });
   const arr = Object.values(grupos).sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
   if (!arr.length) { tbody.innerHTML = ''; if (empty) empty.style.display = 'block'; return; }
   if (empty) empty.style.display = 'none';
-  tbody.innerHTML = arr.map(g => {
+  let html = '';
+  arr.forEach(g => {
     const apro = g.rec > 0 ? g.ven / g.rec * 100 : 0;
     const fator = g.rec > 0 ? g.ven / g.rec : 0;
-    return `<tr>
-      <td>${esc(g.nome)}</td>
+    const aberto = rGrupoDetalhe.has(g.key);
+    html += `<tr>
+      <td>${esc(g.nome)} <button class="btn" style="padding:0.1rem 0.4rem;font-size:9px" onclick="toggleGrupoDetalhe('${g.key}')">${aberto ? '▲' : '▼'} ajustar</button></td>
       <td class="num">${g.pecas}</td>
       <td class="num">${fmt(g.rec)}</td>
       <td class="num">${fmt(g.ven)}</td>
       <td class="num"><b>${apro.toFixed(1)}%</b></td>
       <td class="num">${fator.toFixed(4)}</td>
     </tr>`;
-  }).join('');
+    if (aberto) {
+      const linhas = g.itens.map(r => `<div style="display:flex;gap:0.5rem;align-items:center;padding:0.2rem 0;flex-wrap:wrap">
+        <span style="font-family:var(--font-sans);font-size:11px;color:var(--ink-light);min-width:60px">Recebido</span>
+        <input type="number" min="0" step="0.001" value="${r.pesoRecebido}" onchange="editarPecaEncerrada('${r.id}','pesoRecebido',this.value)" style="width:80px;text-align:right;font-family:var(--font-sans);padding:0.3rem;border:1px solid var(--border);border-radius:var(--radius)">
+        <span style="font-family:var(--font-sans);font-size:11px;color:var(--ink-light);min-width:50px">Vendido</span>
+        <input type="number" min="0" step="0.001" value="${r.pesoVendido}" onchange="editarPecaEncerrada('${r.id}','pesoVendido',this.value)" style="width:80px;text-align:right;font-family:var(--font-sans);padding:0.3rem;border:1px solid var(--border);border-radius:var(--radius)">
+        <span style="font-family:var(--font-sans);font-size:11px;color:var(--ink-light);min-width:50px">Recebido em</span>
+        <input type="text" value="${isoParaBR(r.dataReceb)}" onchange="editarPecaEncerrada('${r.id}','dataReceb',this.value)" style="width:90px;font-family:var(--font-sans);padding:0.3rem;border:1px solid var(--border);border-radius:var(--radius)">
+        <span style="font-family:var(--font-sans);font-size:11px;color:var(--ink-light);min-width:60px">Encerrado em</span>
+        <input type="text" value="${isoParaBR(r.dataFim)}" onchange="editarPecaEncerrada('${r.id}','dataFim',this.value)" style="width:90px;font-family:var(--font-sans);padding:0.3rem;border:1px solid var(--border);border-radius:var(--radius)">
+        <b style="min-width:50px;text-align:right">${(r.aproveitamento||0).toFixed(1)}%</b>
+        <button class="btn" style="padding:0.15rem 0.5rem;font-size:10px" onclick="excluirPecaRendimento('${r.id}')">✕ excluir</button>
+      </div>`).join('');
+      html += `<tr><td colspan="6" style="background:var(--bege-dark);padding:0.5rem 1rem">
+        <div style="font-size:10px;font-weight:900;letter-spacing:0.06em;text-transform:uppercase;color:var(--ink-light);margin-bottom:0.3rem">Peças encerradas — ajustar</div>
+        ${linhas}
+      </td></tr>`;
+    }
+  });
+  tbody.innerHTML = html;
+}
+
+function toggleGrupoDetalhe(key) {
+  if (rGrupoDetalhe.has(key)) rGrupoDetalhe.delete(key); else rGrupoDetalhe.add(key);
+  renderRendimento();
+}
+
+async function editarPecaEncerrada(id, campo, val) {
+  const r = RENDIMENTOS.find(x => x.id === id); if (!r) return;
+  if (campo === 'pesoRecebido' || campo === 'pesoVendido') r[campo] = Math.round((parseFloat(val) || 0) * 1000) / 1000;
+  else r[campo] = brParaISO(val) || r[campo];
+  r.aproveitamento = r.pesoRecebido > 0 ? Math.round(r.pesoVendido / r.pesoRecebido * 10000) / 100 : 0;
+  await salvarRendimentos(); renderRendimento();
+}
+
+async function excluirPecaRendimento(id) {
+  if (!confirm('Excluir esta peça do histórico de rendimento?')) return;
+  RENDIMENTOS = RENDIMENTOS.filter(x => x.id !== id);
+  await salvarRendimentos(); renderRendimento();
 }
 
 function exportarRendimentoCSV() {
