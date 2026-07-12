@@ -209,7 +209,36 @@ header {
 
 /* ── GRID ── */
 .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-bottom: 1.5rem; }
-@media (max-width: 640px) { .two-col { grid-template-columns: 1fr; } }
+@media (max-width: 640px) {
+  .two-col { grid-template-columns: 1fr; }
+
+  /* Responsivo mobile */
+  nav { flex-wrap: wrap; gap: 8px; }
+  .tab-btn { font-size: 12px; padding: 8px 12px; }
+  .ws-badge { font-size: 11px; }
+  .field-inline { min-width: 100% !important; margin-bottom: 8px; }
+  .box { padding: 12px; }
+  h2, h3 { font-size: 18px; }
+  table { font-size: 12px; }
+  table th, table td { padding: 6px 4px; }
+  .btn { padding: 6px 12px; font-size: 12px; }
+  .modal-box { width: 95vw; max-width: 100%; }
+  #poForm { padding: 12px; margin-bottom: 12px; }
+  .modal-body { max-height: 70vh; overflow-y: auto; }
+}
+
+@media (max-width: 480px) {
+  nav { padding: 8px; }
+  .tab-btn { font-size: 11px; padding: 6px 10px; }
+  h1 { font-size: 18px; }
+  h2 { font-size: 16px; }
+  .box { padding: 8px; }
+  table { font-size: 11px; }
+  table th, table td { padding: 4px 2px; }
+  .btn { padding: 4px 8px; font-size: 11px; }
+  textarea { font-size: 12px; }
+  input[type="number"], input[type="text"], select { font-size: 12px; padding: 4px; }
+}
 
 /* ── SEÇÃO ── */
 .section {
@@ -532,7 +561,8 @@ table.imp-grid tr.is-header td.rownum { background: var(--ink); color: var(--beg
 
 <nav class="tabs">
   <div class="tabs-inner">
-    <button class="tab-btn active" data-tab="precificacao" onclick="switchTab('precificacao')">Precificação</button>
+    <button class="tab-btn active" data-tab="preorcamento" onclick="switchTab('preorcamento')">Pré-Orçamento</button>
+    <button class="tab-btn" data-tab="precificacao" onclick="switchTab('precificacao')">Precificação</button>
     <button class="tab-btn" data-tab="historico" onclick="switchTab('historico')">Histórico</button>
     <button class="tab-btn" data-tab="orcamento" onclick="switchTab('orcamento')">Orçamento</button>
     <button class="tab-btn" data-tab="rendimento" onclick="switchTab('rendimento')">Rendimento</button>
@@ -1013,6 +1043,108 @@ table.imp-grid tr.is-header td.rownum { background: var(--ink); color: var(--beg
   </div>
 </div>
 
+<!-- ════════ ABA: PRÉ-ORÇAMENTO ════════ -->
+<div class="tab-content" data-tab="preorcamento" style="display:none">
+  <div class="box">
+    <h2>Pré-Orçamento</h2>
+
+    <!-- Formulário -->
+    <div id="poForm" style="display:none; border:1px solid #ddd; padding:15px; margin-bottom:20px; background:#f9f9f9; border-radius:6px">
+      <h3>Adicionar Item à Lista</h3>
+
+      <div class="field-inline" style="min-width:300px">
+        <label>Produto</label>
+        <input type="text" id="poNomeProd" list="poList" placeholder="Digite para buscar..." oninput="atualizarUnidadePreOrc()">
+        <datalist id="poList"></datalist>
+      </div>
+
+      <div class="field-inline">
+        <label>Quantidade</label>
+        <input type="number" id="poQtd" min="0.01" step="0.1" placeholder="0,00">
+      </div>
+
+      <div class="field-inline" style="min-width:150px">
+        <label>Unidade</label>
+        <input type="text" id="poUn" readonly style="background:#f0f0f0">
+      </div>
+
+      <div class="field-inline" style="min-width:200px">
+        <label>Fornecedor</label>
+        <input type="text" id="poForn" placeholder="ex: Colavita" list="poFornList">
+        <datalist id="poFornList"></datalist>
+      </div>
+
+      <div class="field-inline" style="min-width:150px">
+        <label>Status</label>
+        <select id="poStatus">
+          <option>A orçar</option>
+          <option>Orçado</option>
+          <option>Confirmado</option>
+          <option>Cancelado</option>
+        </select>
+      </div>
+
+      <div style="width:100%">
+        <label>Nota (comunicação)</label>
+        <textarea id="poNota" placeholder="ex: 'urgente', 'falta spec', 'Colavita enviou cotação'..." style="width:100%;min-height:60px"></textarea>
+      </div>
+
+      <input type="hidden" id="poId">
+
+      <div style="margin-top:10px">
+        <button class="btn btn-ink" onclick="salvarPreOrcamento()">Adicionar</button>
+        <button class="btn" onclick="document.getElementById('poForm').style.display='none'">Cancelar</button>
+      </div>
+    </div>
+
+    <button class="btn btn-ink" onclick="novoPreOrcamento()" style="margin-bottom:15px">Novo Item</button>
+
+    <!-- Filtros -->
+    <div style="margin-bottom:15px; display:flex; gap:10px; flex-wrap:wrap; background:#f5f5f5; padding:10px; border-radius:4px">
+      <div class="field-inline">
+        <label>Status</label>
+        <select id="poFiltroStatus" onchange="setFiltroStatusPreOrc(this.value)">
+          <option>Todos</option>
+          <option>A orçar</option>
+          <option>Orçado</option>
+          <option>Confirmado</option>
+          <option>Cancelado</option>
+        </select>
+      </div>
+
+      <div class="field-inline">
+        <label>Fornecedor</label>
+        <select id="poFiltroForn" onchange="setFiltroFornPreOrc(this.value)">
+          <option value="">Todos</option>
+        </select>
+      </div>
+
+      <button class="btn" onclick="resetarFiltrosPreOrc()">Resetar</button>
+      <button class="btn" onclick="exportarPreOrcamentosCSV()">Exportar CSV</button>
+    </div>
+
+    <!-- Tabela -->
+    <div style="overflow-x:auto">
+      <table style="width:100%; border-collapse:collapse; font-size:13px">
+        <thead style="background:#f0f0f0">
+          <tr>
+            <th style="text-align:left; padding:8px; border-bottom:2px solid #999; cursor:pointer" onclick="setPoSort('id')">ID</th>
+            <th style="text-align:left; padding:8px; border-bottom:2px solid #999; cursor:pointer" onclick="setPoSort('produto')">Produto</th>
+            <th style="text-align:left; padding:8px; border-bottom:2px solid #999; cursor:pointer" onclick="setPoSort('qtd')">Qtd</th>
+            <th style="text-align:left; padding:8px; border-bottom:2px solid #999; cursor:pointer" onclick="setPoSort('fornecedor')">Fornecedor</th>
+            <th style="text-align:left; padding:8px; border-bottom:2px solid #999; cursor:pointer" onclick="setPoSort('status')">Status</th>
+            <th style="text-align:left; padding:8px; border-bottom:2px solid #999; cursor:pointer" onclick="setPoSort('data')">Quem/Quando</th>
+            <th style="text-align:left; padding:8px; border-bottom:2px solid #999">Ações</th>
+          </tr>
+        </thead>
+        <tbody id="poTbody" style="font-size:13px">
+          <!-- Renderizado via JavaScript -->
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
 <script>
 let nfData = null;
 let fatores = [];
@@ -1029,7 +1161,7 @@ const BV_CONFIG = {
   SUPABASE_ANON_KEY: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im95dXJyeWJzcndtaHhldXpvbWZ4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE5ODMwNjUsImV4cCI6MjA5NzU1OTA2NX0.Iq-tn5oQSp46ljc8rkYf81znVYryMPTo7oM3Kkniqok',
   TABLE:             'bv_kv'
 };
-const STORE_KEYS = { historico: 'bonvivant-historico-v1', orcamentos: 'bonvivant-orcamentos-v1', importacoes: 'bonvivant-importacoes-v1' };
+const STORE_KEYS = { historico: 'bonvivant-historico-v1', orcamentos: 'bonvivant-orcamentos-v1', importacoes: 'bonvivant-importacoes-v1', preorcamentos: 'bonvivant-preorcamentos-v1' };
 
 /* ── AMBIENTES ISOLADOS (workspace por link ?e=codigo) ──
    Cada ambiente tem seus próprios dados na nuvem, etiquetados pelo código.
@@ -1108,9 +1240,11 @@ function parseNumBR(v) { v = (v || '').toString().trim(); if (!v) return 0; if (
 function switchTab(tab) {
   document.querySelectorAll('.tab-pane').forEach(p => p.classList.toggle('active', p.id === 'tab-' + tab));
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+  document.querySelectorAll('.tab-content').forEach(c => c.style.display = c.dataset.tab === tab ? 'block' : 'none');
   if (tab === 'historico') renderHistorico();
   if (tab === 'orcamento') { popularFornOrc(); renderOrcSalvos(); }
   if (tab === 'rendimento') { popularProdList(); renderPecasAbertas(); renderRendimento(); }
+  if (tab === 'preorcamento') { renderPreOrcSalvos(); }
 }
 
 /* ── Sparkline (SVG inline) ── */
@@ -1940,6 +2074,24 @@ function produtosDoForn(nome) {
 }
 
 let orcExtras = [];
+
+/* ═══════════════════ PRÉ-ORÇAMENTOS ═══════════════════ */
+let PREORCAMENTOS = {};
+let filtroStatusPreOrc = 'Todos';
+let filtroFornPreOrc = '';
+let poSortCol = 'data';
+let poSortAsc = false;
+
+async function carregarPreOrcamentos() {
+  try { PREORCAMENTOS = await BV.get(nsKey(STORE_KEYS.preorcamentos)) || {}; }
+  catch (e) { console.error('Erro ao carregar pré-orçamentos:', e); PREORCAMENTOS = {}; }
+}
+
+async function salvarPreOrcamentos() {
+  try { await BV.set(nsKey(STORE_KEYS.preorcamentos), PREORCAMENTOS); }
+  catch (e) { console.error('Erro ao salvar pré-orçamento:', e); }
+}
+
 function popularAddList() {
   const dl = document.getElementById('oAddList'); if (!dl) return;
   const nomes = [...new Set(Object.values(BANCO.produtos || {}).map(p => p.nome).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR'));
@@ -2518,6 +2670,240 @@ function exportarRendimentoCSV() {
   baixarCsv('rendimento.csv', csv);
 }
 
+/* ═══════════════════ PRÉ-ORÇAMENTOS — FUNÇÕES ═══════════════════ */
+function montarPreOrcObj() {
+  const prod = (document.getElementById('poNomeProd').value || '').trim();
+  const qtd = parseFloat(document.getElementById('poQtd').value) || 0;
+  const status = document.getElementById('poStatus').value;
+  const nota = (document.getElementById('poNota').value || '').trim();
+  const forn = (document.getElementById('poForn').value || '').trim();
+
+  if (!prod || qtd <= 0) { alert('Preencha: produto e quantidade'); return null; }
+
+  const prodBanco = Object.values(BANCO.produtos || {}).find(p => normNome(p.nome) === normNome(prod));
+  const un = prodBanco ? prodBanco.uTrib : '';
+
+  return {
+    id: 'PRE-' + String(Math.max(0, ...Object.keys(PREORCAMENTOS).map(k => parseInt(k.split('-')[1]) || 0)) + 1).padStart(3, '0'),
+    data: new Date().toISOString().slice(0, 10),
+    produto: prod,
+    qtd: qtd,
+    un: un,
+    fornecedor: forn,
+    status: status,
+    nota: nota,
+    criadoEm: new Date().toISOString(),
+    criadoPor: WORKSPACE,
+    historico: [{
+      data: new Date().toISOString(),
+      por: WORKSPACE,
+      antes: '',
+      depois: status
+    }]
+  };
+}
+
+function atualizarUnidadePreOrc() {
+  const prod = (document.getElementById('poNomeProd').value || '').trim();
+  const prodBanco = Object.values(BANCO.produtos || {}).find(p => normNome(p.nome) === normNome(prod));
+  document.getElementById('poUn').value = prodBanco ? (prodBanco.uTrib || '') : '';
+}
+
+async function novoPreOrcamento() {
+  document.getElementById('poForm').style.display = 'block';
+  document.getElementById('poNomeProd').value = '';
+  document.getElementById('poQtd').value = '';
+  document.getElementById('poForn').value = '';
+  document.getElementById('poStatus').value = 'A orçar';
+  document.getElementById('poNota').value = '';
+  document.getElementById('poId').value = '';
+  document.getElementById('poUn').value = '';
+  document.getElementById('poNomeProd').focus();
+  popularProdList();
+
+  const dlForns = document.getElementById('poFornList');
+  const forns = [...new Set(Object.values(BANCO.produtos || {}).map(p => p.fornecedorNome).filter(Boolean))].sort();
+  dlForns.innerHTML = forns.map(f => `<option value="${esc(f)}">`).join('');
+}
+
+async function salvarPreOrcamento() {
+  const obj = montarPreOrcObj();
+  if (!obj) return;
+
+  const idAntigo = document.getElementById('poId').value;
+  if (idAntigo) {
+    obj.id = idAntigo;
+    obj.criadoEm = PREORCAMENTOS[idAntigo].criadoEm;
+    obj.criadoPor = PREORCAMENTOS[idAntigo].criadoPor;
+  }
+
+  PREORCAMENTOS[obj.id] = obj;
+  await salvarPreOrcamentos();
+  document.getElementById('poForm').style.display = 'none';
+  renderPreOrcSalvos();
+}
+
+function reabrirPreOrcamento(id) {
+  const pre = PREORCAMENTOS[id];
+  if (!pre) return;
+
+  document.getElementById('poNomeProd').value = pre.produto;
+  document.getElementById('poQtd').value = pre.qtd;
+  document.getElementById('poForn').value = pre.fornecedor;
+  document.getElementById('poStatus').value = pre.status;
+  document.getElementById('poNota').value = pre.nota;
+  document.getElementById('poId').value = id;
+  document.getElementById('poForm').style.display = 'block';
+  document.getElementById('poNomeProd').focus();
+}
+
+function excluirPreOrcamento(id) {
+  if (!confirm(`Deletar ${id}?`)) return;
+  delete PREORCAMENTOS[id];
+  salvarPreOrcamentos();
+  renderPreOrcSalvos();
+}
+
+function criarOrcamentoDePreOrc(id) {
+  const pre = PREORCAMENTOS[id];
+  if (!pre) return;
+
+  novoOrcamento();
+  document.getElementById('oForn').value = pre.fornecedor;
+
+  orcExtras = [{
+    nome: pre.produto,
+    uTrib: pre.un,
+    preco: 0,
+    _extra: true,
+    fornecedor: pre.fornecedor
+  }];
+
+  montarOrcItens();
+  switchTab('orcamento');
+  alert(`Pré-orçamento ${id} adicionado ao orçamento. Complete os preços.`);
+}
+
+function passaFiltroPreOrc(pre) {
+  if (filtroStatusPreOrc !== 'Todos' && pre.status !== filtroStatusPreOrc) return false;
+  if (filtroFornPreOrc && pre.fornecedor !== filtroFornPreOrc) return false;
+  return true;
+}
+
+function setFiltroStatusPreOrc(v) {
+  filtroStatusPreOrc = v;
+  renderPreOrcSalvos();
+}
+
+function setFiltroFornPreOrc(v) {
+  filtroFornPreOrc = v;
+  renderPreOrcSalvos();
+}
+
+function resetarFiltrosPreOrc() {
+  filtroStatusPreOrc = 'Todos';
+  filtroFornPreOrc = '';
+  document.getElementById('poFiltroStatus').value = 'Todos';
+  document.getElementById('poFiltroForn').value = '';
+  renderPreOrcSalvos();
+}
+
+function setPoSort(col) {
+  if (poSortCol === col) {
+    poSortAsc = !poSortAsc;
+  } else {
+    poSortCol = col;
+    poSortAsc = false;
+  }
+  renderPreOrcSalvos();
+}
+
+function tempoRelativoStr(isoDateTime) {
+  const agora = new Date();
+  const entao = new Date(isoDateTime);
+  const diffMs = agora - entao;
+  const diffMin = Math.floor(diffMs / 60000);
+  const diffHora = Math.floor(diffMs / 3600000);
+  const diffDia = Math.floor(diffMs / 86400000);
+
+  if (diffMin < 1) return 'agora';
+  if (diffMin < 60) return `há ${diffMin}min`;
+  if (diffHora < 24) return `há ${diffHora}h`;
+  if (diffDia < 30) return `há ${diffDia}d`;
+  return isoParaBR(isoDateTime);
+}
+
+function exportarPreOrcamentosCSV() {
+  let arr = Object.values(PREORCAMENTOS).filter(passaFiltroPreOrc);
+  if (!arr.length) { alert('Nada para exportar.'); return; }
+
+  let csv = 'ID;Produto;Qtd;Un;Fornecedor;Status;Nota;Criado em;Criado por\r\n';
+  csv += arr.map(pre =>
+    csvCell(pre.id) + ';' +
+    csvCell(pre.produto) + ';' +
+    csvCell(pre.qtd) + ';' +
+    csvCell(pre.un) + ';' +
+    csvCell(pre.fornecedor) + ';' +
+    csvCell(pre.status) + ';' +
+    csvCell(pre.nota) + ';' +
+    csvCell(isoParaBR(pre.criadoEm)) + ';' +
+    csvCell(pre.criadoPor)
+  ).join('\r\n');
+
+  baixarCsv('pre-orcamentos.csv', csv);
+}
+
+function renderPreOrcSalvos() {
+  const tbody = document.getElementById('poTbody');
+  if (!tbody) return;
+
+  let arr = Object.values(PREORCAMENTOS).filter(passaFiltroPreOrc);
+
+  arr.sort((a, b) => {
+    let aVal, bVal;
+    switch(poSortCol) {
+      case 'id': aVal = a.id; bVal = b.id; break;
+      case 'produto': aVal = a.produto; bVal = b.produto; break;
+      case 'fornecedor': aVal = a.fornecedor; bVal = b.fornecedor; break;
+      case 'status': aVal = a.status; bVal = b.status; break;
+      case 'data': aVal = a.criadoEm; bVal = b.criadoEm; break;
+      default: aVal = a.criadoEm; bVal = b.criadoEm;
+    }
+
+    const cmp = (aVal || '').localeCompare(bVal || '', 'pt-BR');
+    return poSortAsc ? cmp : -cmp;
+  });
+
+  tbody.innerHTML = arr.map(pre => {
+    const tempoRelativo = tempoRelativoStr(pre.criadoEm);
+    const statusColor = {'A orçar': '🔴', 'Orçado': '🟡', 'Confirmado': '🟢', 'Cancelado': '⚫'}[pre.status] || '';
+
+    return `
+      <tr style="border-bottom:1px solid #ddd">
+        <td style="padding:8px">${esc(pre.id)}</td>
+        <td style="padding:8px"><strong>${esc(pre.produto)}</strong></td>
+        <td style="padding:8px">${pre.qtd} ${esc(pre.un)}</td>
+        <td style="padding:8px">${esc(pre.fornecedor)}</td>
+        <td style="padding:8px">${statusColor} ${esc(pre.status)}</td>
+        <td style="padding:8px"><small>${esc(pre.criadoPor)}<br>${tempoRelativo}</small></td>
+        <td style="padding:8px; white-space:nowrap">
+          <button onclick="reabrirPreOrcamento('${esc(pre.id)}')" style="padding:2px 4px; margin-right:2px" title="Editar">✎</button>
+          <button onclick="excluirPreOrcamento('${esc(pre.id)}')" style="padding:2px 4px; margin-right:2px" title="Deletar">✕</button>
+          <button onclick="criarOrcamentoDePreOrc('${esc(pre.id)}')" style="padding:2px 4px" title="Criar orçamento">→</button>
+        </td>
+      </tr>
+    `;
+  }).join('');
+
+  popularProdList();
+  const selForn = document.getElementById('poFiltroForn');
+  if (selForn) {
+    const forns = [...new Set(Object.values(PREORCAMENTOS).map(p => p.fornecedor).filter(Boolean))].sort();
+    selForn.innerHTML = '<option value="">Todos</option>' + forns.map(f => `<option value="${esc(f)}">${esc(f)}</option>`).join('');
+    selForn.value = filtroFornPreOrc;
+  }
+}
+
 /* ── Tela de acesso ao ambiente ── */
 function mostrarGate() { const g = document.getElementById('gate'); if (g) g.classList.add('on'); const i = document.getElementById('gateCode'); if (i) i.focus(); }
 function entrarWorkspace() {
@@ -2535,6 +2921,7 @@ function entrarWorkspace() {
   await carregarOrcamentos();
   await carregarImportacoes();
   await carregarRendimentos();
+  await carregarPreOrcamentos();
 })();
 </script>
 </body>
