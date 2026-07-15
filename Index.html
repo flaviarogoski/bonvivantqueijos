@@ -1186,7 +1186,7 @@ const BV = {
     if (!window.supabase) {
       await new Promise((res, rej) => {
         const s = document.createElement('script');
-        s.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';
+        s.src = 'https://unpkg.com/@supabase/supabase-js@2';
         s.onload = res; s.onerror = () => rej(new Error('Falha ao carregar Supabase'));
         document.head.appendChild(s);
       });
