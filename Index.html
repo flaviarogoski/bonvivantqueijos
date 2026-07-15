@@ -1205,12 +1205,25 @@ const BV = {
     return raw ? JSON.parse(raw) : null;
   },
   async set(key, value) {
+    console.log('BV.set() - Cloud disponível?', this.cloud);
     if (this.cloud) {
-      const sb = await this._client();
-      const { error } = await sb.from(BV_CONFIG.TABLE).upsert({ k: key, v: value, updated_at: new Date().toISOString() });
-      if (error) throw error;
-      return true;
+      try {
+        const sb = await this._client();
+        console.log('Cliente Supabase criado, fazendo upsert em:', key);
+        const { error } = await sb.from(BV_CONFIG.TABLE).upsert({ k: key, v: value, updated_at: new Date().toISOString() });
+        if (error) {
+          console.error('❌ Erro Supabase:', error);
+          throw error;
+        }
+        console.log('✓ Salvo em Supabase:', key);
+        return true;
+      } catch (e) {
+        console.error('❌ Falha ao salvar em Supabase, caindo para localStorage:', e);
+        localStorage.setItem(key, JSON.stringify(value));
+        return true;
+      }
     }
+    console.log('Cloud não disponível, salvando em localStorage:', key);
     localStorage.setItem(key, JSON.stringify(value));
     return true;
   }
@@ -2083,13 +2096,26 @@ let poSortCol = 'data';
 let poSortAsc = false;
 
 async function carregarPreOrcamentos() {
-  try { PREORCAMENTOS = await BV.get(nsKey(STORE_KEYS.preorcamentos)) || {}; }
+  try {
+    const chave = nsKey(STORE_KEYS.preorcamentos);
+    console.log('Carregando pré-orçamentos de:', chave);
+    PREORCAMENTOS = await BV.get(chave) || {};
+    console.log('Pré-orçamentos carregados:', Object.keys(PREORCAMENTOS).length, 'itens');
+  }
   catch (e) { console.error('Erro ao carregar pré-orçamentos:', e); PREORCAMENTOS = {}; }
 }
 
 async function salvarPreOrcamentos() {
-  try { await BV.set(nsKey(STORE_KEYS.preorcamentos), PREORCAMENTOS); }
-  catch (e) { console.error('Erro ao salvar pré-orçamento:', e); }
+  try {
+    const chave = nsKey(STORE_KEYS.preorcamentos);
+    console.log('Salvando pré-orçamentos em:', chave, 'Total:', Object.keys(PREORCAMENTOS).length);
+    await BV.set(chave, PREORCAMENTOS);
+    console.log('✓ Pré-orçamentos salvos com sucesso!');
+  }
+  catch (e) {
+    console.error('❌ Erro ao salvar pré-orçamento:', e);
+    alert('ERRO ao salvar: ' + e.message);
+  }
 }
 
 function popularAddList() {
@@ -2738,9 +2764,14 @@ async function salvarPreOrcamento() {
   }
 
   PREORCAMENTOS[obj.id] = obj;
-  await salvarPreOrcamentos();
-  document.getElementById('poForm').style.display = 'none';
-  renderPreOrcSalvos();
+  try {
+    await salvarPreOrcamentos();
+    document.getElementById('poForm').style.display = 'none';
+    renderPreOrcSalvos();
+  } catch (e) {
+    console.error('Erro ao salvar pré-orçamento:', e);
+    alert('Erro ao salvar: ' + e.message);
+  }
 }
 
 function reabrirPreOrcamento(id) {
