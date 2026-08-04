@@ -1263,6 +1263,96 @@ const Logger = {
   }
 };
 
+/* ── Validação de Entrada ── */
+const Validacao = {
+  // Validar NF-e
+  validarNF(nf) {
+    if (!nf.emitNome || !nf.emitNome.trim()) {
+      throw new Error('❌ Fornecedor (emitente) obrigatório na NF');
+    }
+
+    if (!nf.nNF || nf.nNF <= 0) {
+      throw new Error('❌ Número da NF deve ser > 0');
+    }
+
+    if (!Array.isArray(nf.itens) || nf.itens.length === 0) {
+      throw new Error('❌ NF deve ter pelo menos 1 item');
+    }
+
+    nf.itens.forEach((it, i) => {
+      if (!it.nome || !it.nome.trim()) {
+        throw new Error(`❌ Item ${i+1}: Nome do produto obrigatório`);
+      }
+
+      if (typeof it.custoUn !== 'number' || it.custoUn <= 0) {
+        throw new Error(`❌ Item ${i+1}: Custo deve ser > R$ 0 (recebido: ${it.custoUn})`);
+      }
+
+      if (typeof it.qtd !== 'number' || it.qtd <= 0) {
+        throw new Error(`❌ Item ${i+1}: Quantidade deve ser > 0 (recebido: ${it.qtd})`);
+      }
+
+      if (typeof it.pICMS !== 'number' || it.pICMS < 0 || it.pICMS > 100) {
+        throw new Error(`❌ Item ${i+1}: ICMS deve ser 0-100% (recebido: ${it.pICMS})`);
+      }
+    });
+
+    Logger.log('VALIDACAO', 'NF validada com sucesso', { fornecedor: nf.emitNome, itens: nf.itens.length });
+    return true;
+  },
+
+  // Validar Orçamento
+  validarOrcamento(orc) {
+    if (!orc.fornecedor || !orc.fornecedor.trim()) {
+      throw new Error('❌ Selecione um fornecedor para o orçamento');
+    }
+
+    if (!Array.isArray(orc.itens) || orc.itens.length === 0) {
+      throw new Error('❌ Orçamento deve ter pelo menos 1 item');
+    }
+
+    orc.itens.forEach((it, i) => {
+      if (!it.nome || !it.nome.trim()) {
+        throw new Error(`❌ Item ${i+1}: Nome obrigatório`);
+      }
+
+      if (typeof it.preco !== 'number' || it.preco <= 0) {
+        throw new Error(`❌ Item ${i+1}: Preço deve ser > R$ 0 (recebido: ${it.preco})`);
+      }
+
+      if (typeof it.qtd !== 'number' || it.qtd <= 0) {
+        throw new Error(`❌ Item ${i+1}: Quantidade deve ser > 0 (recebido: ${it.qtd})`);
+      }
+    });
+
+    Logger.log('VALIDACAO', 'Orçamento validado com sucesso', { fornecedor: orc.fornecedor, itens: orc.itens.length });
+    return true;
+  },
+
+  // Validar Pré-Orçamento
+  validarPreOrcamento(po) {
+    if (!po.produto || !po.produto.trim()) {
+      throw new Error('❌ Produto obrigatório');
+    }
+
+    if (typeof po.qtd !== 'number' || po.qtd <= 0) {
+      throw new Error(`❌ Quantidade deve ser > 0 (recebido: ${po.qtd})`);
+    }
+
+    if (!po.status || !po.status.trim()) {
+      throw new Error('❌ Status obrigatório (selecione: A orçar, Orçado, Confirmado ou Cancelado)');
+    }
+
+    const statusValidos = ['A orçar', 'Orçado', 'Confirmado', 'Cancelado'];
+    if (!statusValidos.includes(po.status)) {
+      throw new Error(`❌ Status inválido: "${po.status}". Válidos: ${statusValidos.join(', ')}`);
+    }
+
+    Logger.log('VALIDACAO', 'Pré-orçamento validado com sucesso', { produto: po.produto, status: po.status });
+    return true;
+  }
+};
+
 /* ── Banco em memória ── */
 let BANCO = { fornecedores: {}, produtos: {} };
 async function carregarBanco() {
@@ -1797,6 +1887,15 @@ function parseNF(xmlStr, arquivo) {
   const jaImp = acharImportacao(chaveNF);
   if (jaImp) alert('⚠ Esta NF (nº ' + nfData.nNF + ' · ' + nfData.emitNome + ') já foi importada em ' + isoParaBR(jaImp.dataImport) + '.\n\nVocê pode reprecificar à vontade — o histórico não duplica.');
 
+  // VALIDAR antes de salvar
+  try {
+    Validacao.validarNF(nfData);
+  } catch (e) {
+    Logger.error('NF', 'Validação falhou', e);
+    alert(e.message);
+    return;  // Não salva se validação falhar
+  }
+
   renderNF();
   salvarNFnoBanco(nfData);
   registrarImportacao({
@@ -2298,6 +2397,16 @@ function montarOrcObj(status) {
 
 async function salvarOrcamento(status) {
   const o = montarOrcObj(status); if (!o) return null;
+
+  // VALIDAR antes de salvar
+  try {
+    Validacao.validarOrcamento(o);
+  } catch (e) {
+    Logger.error('ORCAMENTO', 'Validação falhou', e);
+    alert(e.message);
+    return null;  // Não salva se validação falhar
+  }
+
   ORCAMENTOS[o.numero] = o; orcEditando = o.numero;
   await salvarOrcamentos();
   const nPrecos = await persistirPrecosEditados();   // preços editados viram referência do produto
@@ -2811,6 +2920,15 @@ async function salvarPreOrcamento() {
   const obj = montarPreOrcObj();
   if (!obj) return;
 
+  // VALIDAR antes de salvar
+  try {
+    Validacao.validarPreOrcamento(obj);
+  } catch (e) {
+    Logger.error('PREORCAMENTO', 'Validação falhou', e);
+    alert(e.message);
+    return;  // Não salva se validação falhar
+  }
+
   const idAntigo = document.getElementById('poId').value;
   if (idAntigo) {
     obj.id = idAntigo;
@@ -2823,8 +2941,9 @@ async function salvarPreOrcamento() {
     await salvarPreOrcamentos();
     document.getElementById('poForm').style.display = 'none';
     renderPreOrcSalvos();
+    Logger.log('PREORCAMENTO', 'Pré-orçamento salvo com sucesso', obj.id);
   } catch (e) {
-    console.error('Erro ao salvar pré-orçamento:', e);
+    Logger.error('PREORCAMENTO', 'Erro ao salvar', e);
     alert('Erro ao salvar: ' + e.message);
   }
 }
