@@ -1233,13 +1233,35 @@ const BV = {
 let BANCO = { fornecedores: {}, produtos: {} };
 async function carregarBanco() {
   try {
-    const b = await BV.get(nsKey(STORE_KEYS.historico));
-    BANCO = (b && b.produtos) ? b : { fornecedores: {}, produtos: {} };
-  } catch (e) { console.error('carregarBanco', e); BANCO = { fornecedores: {}, produtos: {} }; }
+    const chave = nsKey(STORE_KEYS.historico);
+    console.log('📥 Carregando histórico de:', chave);
+    const b = await BV.get(chave);
+    if (b && b.produtos) {
+      console.log('✓ Histórico carregado:', Object.keys(b.produtos).length + ' produtos');
+      BANCO = b;
+    } else {
+      console.log('⚠️ Histórico vazio ou inválido');
+      BANCO = { fornecedores: {}, produtos: {} };
+    }
+  } catch (e) {
+    console.error('❌ Erro ao carregar histórico:', e);
+    BANCO = { fornecedores: {}, produtos: {} };
+  }
   popularFornHist();
   renderHistorico();
 }
-async function salvarBanco() { try { await BV.set(nsKey(STORE_KEYS.historico), BANCO); } catch (e) { console.error('salvarBanco', e); alert('Não foi possível salvar: ' + e.message); } }
+async function salvarBanco() {
+  try {
+    const chave = nsKey(STORE_KEYS.historico);
+    console.log('💾 Salvando histórico em:', chave);
+    console.log('📊 Tamanho:', Object.keys(BANCO.produtos || {}).length + ' produtos');
+    await BV.set(chave, BANCO);
+    console.log('✓ Histórico salvo em Supabase');
+  } catch (e) {
+    console.error('❌ Erro ao salvar histórico:', e);
+    alert('Não foi possível salvar histórico: ' + e.message);
+  }
+}
 
 /* ── Helpers ── */
 function esc(s) { return (s == null ? '' : String(s)).replace(/[&<>"]/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c])); }
