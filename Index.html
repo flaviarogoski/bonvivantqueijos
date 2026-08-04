@@ -1205,27 +1205,61 @@ const BV = {
     return raw ? JSON.parse(raw) : null;
   },
   async set(key, value) {
-    console.log('BV.set() - Cloud disponível?', this.cloud);
+    Logger.log('STORAGE', 'BV.set() - Cloud disponível?', this.cloud);
     if (this.cloud) {
       try {
         const sb = await this._client();
-        console.log('Cliente Supabase criado, fazendo upsert em:', key);
+        Logger.log('STORAGE', 'Cliente Supabase criado, fazendo upsert');
         const { error } = await sb.from(BV_CONFIG.TABLE).upsert({ k: key, v: value, updated_at: new Date().toISOString() });
         if (error) {
-          console.error('❌ Erro Supabase:', error);
+          Logger.error('STORAGE', 'Erro Supabase', error);
           throw error;
         }
-        console.log('✓ Salvo em Supabase:', key);
+        Logger.sync('UPSERT', key, 'OK');
         return true;
       } catch (e) {
-        console.error('❌ Falha ao salvar em Supabase, caindo para localStorage:', e);
+        Logger.warn('STORAGE', 'Falha em Supabase, caindo para localStorage');
         localStorage.setItem(key, JSON.stringify(value));
+        Logger.sync('FALLBACK', key, 'OK');
         return true;
       }
     }
-    console.log('Cloud não disponível, salvando em localStorage:', key);
+    Logger.log('STORAGE', 'Cloud não disponível, salvando em localStorage');
     localStorage.setItem(key, JSON.stringify(value));
+    Logger.sync('LOCAL', key, 'OK');
     return true;
+  }
+};
+
+/* ── Logger Estruturado ── */
+const Logger = {
+  _ts() { return new Date().toLocaleTimeString('pt-BR'); },
+
+  log(ctx, msg, data) {
+    const ts = this._ts();
+    console.log(`[${ts}] [${ctx}] ${msg}`, data || '');
+  },
+
+  error(ctx, msg, error) {
+    const ts = this._ts();
+    const errMsg = error?.message || String(error);
+    console.error(`[${ts}] [${ctx}] ❌ ${msg}: ${errMsg}`);
+  },
+
+  sync(action, key, status) {
+    const ts = this._ts();
+    const icon = status === 'OK' ? '✓' : '❌';
+    console.log(`[${ts}] [SYNC] ${icon} ${action}: ${key}`);
+  },
+
+  perf(operation, ms) {
+    const ts = this._ts();
+    console.log(`[${ts}] [PERF] ${operation}: ${ms}ms`);
+  },
+
+  warn(ctx, msg) {
+    const ts = this._ts();
+    console.warn(`[${ts}] [${ctx}] ⚠️ ${msg}`);
   }
 };
 
@@ -1234,17 +1268,17 @@ let BANCO = { fornecedores: {}, produtos: {} };
 async function carregarBanco() {
   try {
     const chave = nsKey(STORE_KEYS.historico);
-    console.log('📥 Carregando histórico de:', chave);
+    Logger.log('BANCO', 'Carregando histórico de:', chave);
     const b = await BV.get(chave);
     if (b && b.produtos) {
-      console.log('✓ Histórico carregado:', Object.keys(b.produtos).length + ' produtos');
+      Logger.log('BANCO', 'Histórico carregado', Object.keys(b.produtos).length + ' produtos');
       BANCO = b;
     } else {
-      console.log('⚠️ Histórico vazio ou inválido');
+      Logger.warn('BANCO', 'Histórico vazio ou inválido');
       BANCO = { fornecedores: {}, produtos: {} };
     }
   } catch (e) {
-    console.error('❌ Erro ao carregar histórico:', e);
+    Logger.error('BANCO', 'Erro ao carregar histórico', e);
     BANCO = { fornecedores: {}, produtos: {} };
   }
   popularFornHist();
@@ -1253,12 +1287,11 @@ async function carregarBanco() {
 async function salvarBanco() {
   try {
     const chave = nsKey(STORE_KEYS.historico);
-    console.log('💾 Salvando histórico em:', chave);
-    console.log('📊 Tamanho:', Object.keys(BANCO.produtos || {}).length + ' produtos');
+    Logger.log('BANCO', 'Salvando histórico', { chave, produtos: Object.keys(BANCO.produtos || {}).length });
     await BV.set(chave, BANCO);
-    console.log('✓ Histórico salvo em Supabase');
+    Logger.sync('SAVE', chave, 'OK');
   } catch (e) {
-    console.error('❌ Erro ao salvar histórico:', e);
+    Logger.error('BANCO', 'Erro ao salvar histórico', e);
     alert('Não foi possível salvar histórico: ' + e.message);
   }
 }
@@ -1564,11 +1597,11 @@ async function confirmarImportTabela() {
 /* ═══════════ LOG DE IMPORTAÇÕES (trava de duplicado + histórico) ═══════════ */
 let IMPORTACOES = [];
 async function carregarImportacoes() {
-  try { const a = await BV.get(nsKey(STORE_KEYS.importacoes)); IMPORTACOES = Array.isArray(a) ? a : []; }
-  catch (e) { console.error('carregarImportacoes', e); IMPORTACOES = []; }
+  try { const a = await BV.get(nsKey(STORE_KEYS.importacoes)); IMPORTACOES = Array.isArray(a) ? a : []; Logger.log('IMPORTACOES', 'Carregadas', IMPORTACOES.length + ' registros'); }
+  catch (e) { Logger.error('IMPORTACOES', 'Erro ao carregar', e); IMPORTACOES = []; }
   renderImportacoes();
 }
-async function salvarImportacoes() { try { await BV.set(nsKey(STORE_KEYS.importacoes), IMPORTACOES); } catch (e) { console.error('salvarImportacoes', e); } }
+async function salvarImportacoes() { try { await BV.set(nsKey(STORE_KEYS.importacoes), IMPORTACOES); Logger.sync('SAVE', 'importacoes', 'OK'); } catch (e) { Logger.error('IMPORTACOES', 'Erro ao salvar', e); } }
 function acharImportacao(chave) { return IMPORTACOES.find(r => r.chave === chave) || null; }
 async function registrarImportacao(reg) {
   reg.dataImport = new Date().toISOString();
@@ -2084,11 +2117,11 @@ let orcEditando = null;
 let filtroDataOrc = 'tudo';
 
 async function carregarOrcamentos() {
-  try { const o = await BV.get(nsKey(STORE_KEYS.orcamentos)); ORCAMENTOS = (o && typeof o === 'object') ? o : {}; }
-  catch (e) { console.error('carregarOrcamentos', e); ORCAMENTOS = {}; }
+  try { const o = await BV.get(nsKey(STORE_KEYS.orcamentos)); ORCAMENTOS = (o && typeof o === 'object') ? o : {}; Logger.log('ORCAMENTOS', 'Carregados', Object.keys(ORCAMENTOS).length + ' orçamentos'); }
+  catch (e) { Logger.error('ORCAMENTOS', 'Erro ao carregar', e); ORCAMENTOS = {}; }
   popularFornOrc(); novoOrcamento(); renderOrcSalvos();
 }
-async function salvarOrcamentos() { try { await BV.set(nsKey(STORE_KEYS.orcamentos), ORCAMENTOS); } catch (e) { alert('Erro ao salvar orçamento: ' + e.message); } }
+async function salvarOrcamentos() { try { await BV.set(nsKey(STORE_KEYS.orcamentos), ORCAMENTOS); Logger.sync('SAVE', 'orcamentos', 'OK'); } catch (e) { Logger.error('ORCAMENTOS', 'Erro ao salvar', e); alert('Erro ao salvar orçamento: ' + e.message); } }
 
 function popularFornOrc() {
   const sel = document.getElementById('oForn'); if (!sel) return;
@@ -2120,22 +2153,22 @@ let poSortAsc = false;
 async function carregarPreOrcamentos() {
   try {
     const chave = nsKey(STORE_KEYS.preorcamentos);
-    console.log('Carregando pré-orçamentos de:', chave);
+    Logger.log('PREORCAMENTO', 'Carregando de:', chave);
     PREORCAMENTOS = await BV.get(chave) || {};
-    console.log('Pré-orçamentos carregados:', Object.keys(PREORCAMENTOS).length, 'itens');
+    Logger.log('PREORCAMENTO', 'Carregados', Object.keys(PREORCAMENTOS).length + ' itens');
   }
-  catch (e) { console.error('Erro ao carregar pré-orçamentos:', e); PREORCAMENTOS = {}; }
+  catch (e) { Logger.error('PREORCAMENTO', 'Erro ao carregar', e); PREORCAMENTOS = {}; }
 }
 
 async function salvarPreOrcamentos() {
   try {
     const chave = nsKey(STORE_KEYS.preorcamentos);
-    console.log('Salvando pré-orçamentos em:', chave, 'Total:', Object.keys(PREORCAMENTOS).length);
+    Logger.log('PREORCAMENTO', 'Salvando', { chave, total: Object.keys(PREORCAMENTOS).length });
     await BV.set(chave, PREORCAMENTOS);
-    console.log('✓ Pré-orçamentos salvos com sucesso!');
+    Logger.sync('SAVE', chave, 'OK');
   }
   catch (e) {
-    console.error('❌ Erro ao salvar pré-orçamento:', e);
+    Logger.error('PREORCAMENTO', 'Erro ao salvar', e);
     alert('ERRO ao salvar: ' + e.message);
   }
 }
@@ -2487,11 +2520,11 @@ function renderOrcSalvos() {
 /* ═══════════════════ RENDIMENTO / APROVEITAMENTO ═══════════════════ */
 let RENDIMENTOS = [];
 async function carregarRendimentos() {
-  try { const a = await BV.get(nsKey('bonvivant-rendimento-v1')); RENDIMENTOS = Array.isArray(a) ? a : []; }
-  catch (e) { console.error('carregarRendimentos', e); RENDIMENTOS = []; }
+  try { const a = await BV.get(nsKey('bonvivant-rendimento-v1')); RENDIMENTOS = Array.isArray(a) ? a : []; Logger.log('RENDIMENTO', 'Carregados', RENDIMENTOS.length + ' peças'); }
+  catch (e) { Logger.error('RENDIMENTO', 'Erro ao carregar', e); RENDIMENTOS = []; }
   popularProdList(); renderPecasAbertas(); renderRendimento();
 }
-async function salvarRendimentos() { try { await BV.set(nsKey('bonvivant-rendimento-v1'), RENDIMENTOS); } catch (e) { alert('Erro ao salvar rendimento: ' + e.message); } }
+async function salvarRendimentos() { try { await BV.set(nsKey('bonvivant-rendimento-v1'), RENDIMENTOS); Logger.sync('SAVE', 'rendimento', 'OK'); } catch (e) { Logger.error('RENDIMENTO', 'Erro ao salvar', e); alert('Erro ao salvar rendimento: ' + e.message); } }
 
 /* ── Peças abertas (em uso): abre, lança vendas ao longo dos dias, encerra ── */
 async function abrirPeca() {
