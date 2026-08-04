@@ -1316,8 +1316,8 @@ const Validacao = {
         throw new Error(`❌ Item ${i+1}: Nome obrigatório`);
       }
 
-      if (typeof it.preco !== 'number' || it.preco <= 0) {
-        throw new Error(`❌ Item ${i+1}: Preço deve ser > R$ 0 (recebido: ${it.preco})`);
+      if (typeof it.custoRef !== 'number' || it.custoRef <= 0) {
+        throw new Error(`❌ Item ${i+1}: Preço deve ser > R$ 0 (recebido: ${it.custoRef})`);
       }
 
       if (typeof it.qtd !== 'number' || it.qtd <= 0) {
