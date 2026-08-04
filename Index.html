@@ -1288,8 +1288,8 @@ const Validacao = {
         throw new Error(`❌ Item ${i+1}: Custo deve ser > R$ 0 (recebido: ${it.custoUn})`);
       }
 
-      if (typeof it.qtd !== 'number' || it.qtd <= 0) {
-        throw new Error(`❌ Item ${i+1}: Quantidade deve ser > 0 (recebido: ${it.qtd})`);
+      if (typeof it.qtdBase !== 'number' || it.qtdBase <= 0) {
+        throw new Error(`❌ Item ${i+1}: Quantidade deve ser > 0 (recebido: ${it.qtdBase})`);
       }
 
       if (typeof it.pICMS !== 'number' || it.pICMS < 0 || it.pICMS > 100) {
@@ -1303,7 +1303,7 @@ const Validacao = {
 
   // Validar Orçamento
   validarOrcamento(orc) {
-    if (!orc.fornecedor || !orc.fornecedor.trim()) {
+    if (!orc.fornecedorNome || !orc.fornecedorNome.trim()) {
       throw new Error('❌ Selecione um fornecedor para o orçamento');
     }
 
@@ -1325,7 +1325,7 @@ const Validacao = {
       }
     });
 
-    Logger.log('VALIDACAO', 'Orçamento validado com sucesso', { fornecedor: orc.fornecedor, itens: orc.itens.length });
+    Logger.log('VALIDACAO', 'Orçamento validado com sucesso', { fornecedor: orc.fornecedorNome, itens: orc.itens.length });
     return true;
   },
 
